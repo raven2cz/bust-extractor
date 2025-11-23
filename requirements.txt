@@ -1,0 +1,12 @@
+# Character Bust Extractor - Advanced Version Requirements
+# Python 3.8+
+
+# Core dependencies (always required)
+Pillow>=10.0.0           # Image processing
+numpy>=1.24.0            # Array operations
+scipy>=1.11.0            # Connected components analysis
+
+# Optional dependencies (only for AI background removal)
+# Uncomment these if you want to use --bg-method ai
+rembg>=2.0.50          # AI background removal
+onnxruntime>=1.16.0    # Required by rembg
