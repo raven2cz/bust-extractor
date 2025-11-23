@@ -1,11 +1,12 @@
-# Character Bust Extractor v4.1 - Final Version
+# Character Bust Extractor v4.2 - Final Version
 
-Professional tool for extracting character busts from sprite sheets with automatic detection and advanced despill technology.
+Professional tool for extracting character busts from sprite sheets with automatic detection.
 
 ## ✨ Features
 
 - **Automatic bust detection** - No fixed columns, finds busts wherever they are
 - **Dual background removal** - Color-based (fast) or AI-powered (accurate)
+- **Transparent input support** - Skip background removal for pre-processed images
 - **Advanced despill** - Removes green screen color bleeding from character edges
 - **Multiple formats** - PNG or WebP output with optimization
 - **Batch processing** - Process multiple files with glob patterns
@@ -15,6 +16,7 @@ Professional tool for extracting character busts from sprite sheets with automat
 ## 🚀 Quick Start
 
 ### Installation
+
 ```bash
 # Install dependencies
 pip install Pillow numpy scipy
@@ -24,9 +26,13 @@ pip install rembg onnxruntime
 ```
 
 ### Basic Usage
+
 ```bash
 # Process a single file
 python bust_extractor_advanced.py sprite_sheet.png
+
+# For images with transparent background already (NEW in v4.2!)
+python bust_extractor_advanced.py transparent_sprites.png --transparent-input
 
 # With aggressive despill for green screen
 python bust_extractor_advanced.py greenscreen.png --despill-strength 1.0
@@ -41,13 +47,14 @@ python bust_extractor_advanced.py "*.png" --format webp
 python bust_extractor_advanced.py photo.jpg --bg-method ai
 ```
 
-## 🎨 Despill Technology (v4.1)
+## 🎨 Despill Technology (v4.1+)
 
 ### What is Despill?
 
 Despill removes green (or blue) screen color bleeding that appears around character edges after background removal. This eliminates the "green halo" effect for professional-quality results.
 
 ### Despill Strength Levels
+
 ```bash
 # Gentle (preserves more original colors)
 python bust_extractor_advanced.py image.png --despill-strength 0.5
@@ -77,22 +84,59 @@ python bust_extractor_advanced.py image.png --despill-strength 1.0
 python bust_extractor_advanced.py pixel_art.png --no-despill
 ```
 
-### Despill Examples
+## 🆕 Transparent Input Mode (v4.2)
+
+### What is Transparent Input?
+
+If your sprite sheet already has a transparent background (PNG with alpha channel), you can skip the background removal step entirely. This is faster and preserves the exact transparency you've already prepared.
+
+### When to Use Transparent Input
+
+✅ **Use `--transparent-input` when:**
+- Your image already has transparent background
+- You've pre-processed the image in Photoshop/GIMP
+- You want to preserve exact alpha channel data
+- You're working with pixel art that's already prepared
+
+❌ **Don't use `--transparent-input` when:**
+- Image has solid color background (black, white, green)
+- Image has complex/gradient background
+- You need background removal
+
+### Transparent Input Examples
+
 ```bash
-# Perfect for green screen sprite sheets
-python bust_extractor_advanced.py greenscreen.png \
-    --despill-strength 1.0 \
-    -t 35
+# Simple extraction from transparent sprite sheet
+python bust_extractor_advanced.py pre_processed.png --transparent-input
 
-# For characters with legitimate green (green eyes, clothing)
-python bust_extractor_advanced.py character.png \
-    --despill-strength 0.6 \
-    -t 30
+# Batch process transparent sprites
+python bust_extractor_advanced.py "transparent_*.png" --transparent-input
 
-# For photos/complex backgrounds
-python bust_extractor_advanced.py photo.jpg \
-    --bg-method ai \
-    --despill-strength 0.7
+# Transparent input with WebP output
+python bust_extractor_advanced.py sprites.png --transparent-input --format webp
+
+# With custom names
+python bust_extractor_advanced.py busts.png --transparent-input \
+    --names "idle,happy,angry,thinking"
+```
+
+### Comparison: Normal vs Transparent Input
+
+```bash
+# NORMAL MODE (removes background)
+python bust_extractor_advanced.py greenscreen.png --despill-strength 1.0
+# → Detects background color
+# → Removes background
+# → Applies despill
+# → Extracts busts
+# Time: ~2-3 seconds
+
+# TRANSPARENT INPUT MODE (skips background removal)
+python bust_extractor_advanced.py transparent.png --transparent-input
+# → Skips background removal
+# → Uses existing alpha channel
+# → Extracts busts
+# Time: ~1 second (faster!)
 ```
 
 ## 📖 Usage Examples
@@ -111,6 +155,9 @@ python bust_extractor_advanced.py chars.png \
     --quality 95 \
     --despill-strength 1.0
 
+# Transparent input (NEW!)
+python bust_extractor_advanced.py transparent_sprites.png --transparent-input
+
 # Custom names
 python bust_extractor_advanced.py busts.png \
     --names "idle,happy,angry,thinking,surprised,sad"
@@ -121,6 +168,9 @@ python bust_extractor_advanced.py busts.png \
 # All PNG files with aggressive despill
 python bust_extractor_advanced.py "*.png" \
     --despill-strength 1.0
+
+# All transparent sprites (skip BG removal)
+python bust_extractor_advanced.py "transparent_*.png" --transparent-input
 
 # Specific pattern
 python bust_extractor_advanced.py "character_*.png" --format webp
@@ -148,6 +198,12 @@ python bust_extractor_advanced.py sprite.png \
     --names "idle,happy,angry,thinking" \
     --verbose
 
+# Transparent input with minimal processing
+python bust_extractor_advanced.py prepared.png \
+    --transparent-input \
+    --no-preview \
+    --verbose
+
 # No preview generation
 python bust_extractor_advanced.py sprite.png --no-preview
 
@@ -167,6 +223,12 @@ docker run --rm \
   -v $(pwd):/input:ro \
   -v $(pwd)/output:/output \
   bust-extractor /input/sprite.png --despill-strength 1.0
+
+# Process transparent sprites
+docker run --rm \
+  -v $(pwd):/input:ro \
+  -v $(pwd)/output:/output \
+  bust-extractor /input/transparent.png --transparent-input
 
 # Batch with WebP
 docker run --rm \
@@ -188,6 +250,7 @@ See [DOCKER_USAGE.md](DOCKER_USAGE.md) for complete Docker documentation.
 | `--padding` | `-p` | Padding in pixels | `30` |
 | `--bg-method` | `-b` | Background method (color/ai) | `color` |
 | `--bg-tolerance` | `-t` | Color tolerance | `30` |
+| `--transparent-input` | - | Skip BG removal (already transparent) | `False` |
 | `--despill` | - | Enable despill | `True` |
 | `--no-despill` | - | Disable despill | `False` |
 | `--despill-strength` | `-s` | Despill strength 0.0-1.0 | `0.8` |
@@ -197,6 +260,7 @@ See [DOCKER_USAGE.md](DOCKER_USAGE.md) for complete Docker documentation.
 | `--verbose` | `-v` | Verbose output | False |
 
 ## 📁 Output Structure
+
 ```
 busts_sprite_sheet/
 ├── idle.png          # Individual busts with transparent background
@@ -213,6 +277,7 @@ busts_sprite_sheet/
 - **Best for**: Solid backgrounds (black, white, green screen)
 - **No extra dependencies**
 - **Works with**: Despill technology for perfect edges
+
 ```bash
 python bust_extractor_advanced.py sprite.png \
     --bg-method color \
@@ -224,6 +289,7 @@ python bust_extractor_advanced.py sprite.png \
 - **Best for**: Complex backgrounds, photographs, gradients
 - **Requires**: `rembg` and `onnxruntime` packages
 - **Works with**: Despill for additional refinement
+
 ```bash
 # Install dependencies first
 pip install rembg onnxruntime
@@ -232,6 +298,16 @@ pip install rembg onnxruntime
 python bust_extractor_advanced.py photo.jpg \
     --bg-method ai \
     --despill-strength 0.7
+```
+
+### Transparent Input (NEW!)
+- **Fastest** - Skips background removal entirely
+- **Best for**: Pre-processed images with alpha channel
+- **No dependencies** needed
+- **Perfect for**: Pixel art, pre-edited sprites
+
+```bash
+python bust_extractor_advanced.py transparent.png --transparent-input
 ```
 
 ## 🎨 Format Comparison
@@ -252,6 +328,7 @@ python bust_extractor_advanced.py photo.jpg \
 
 | Mode | Speed | Quality | Best For |
 |------|-------|---------|----------|
+| Transparent Input | ⚡⚡⚡⚡ | ⭐⭐⭐⭐⭐ | Pre-processed sprites |
 | Color + PNG + Despill | ⚡⚡⚡ | ⭐⭐⭐⭐ | Green screen sprites |
 | Color + WebP + Despill | ⚡⚡⚡ | ⭐⭐⭐⭐ | Web deployment |
 | AI + PNG + Despill | ⚡ | ⭐⭐⭐⭐⭐ | Photos, complex BG |
@@ -307,6 +384,12 @@ python bust_extractor_advanced.py sprite.png --despill-strength 0.5
 python bust_extractor_advanced.py pixel_art.png --no-despill
 ```
 
+### Issue: Image already has transparent background
+```bash
+# Use transparent input mode to skip background removal
+python bust_extractor_advanced.py sprite.png --transparent-input
+```
+
 ### Issue: Rembg not found
 ```bash
 # Install AI dependencies
@@ -327,13 +410,14 @@ python bust_extractor_advanced.py sprite.png --bg-method ai
 
 ### Issue: Bust hands are cut off
 The advanced version automatically detects bust boundaries, so hands should never be cut off. If this happens, increase padding:
+
 ```bash
 python bust_extractor_advanced.py sprite.png --padding 50
 ```
 
 ## 📦 Files Included
 
-- `bust_extractor_advanced.py` - Main program ⭐ (v4.1)
+- `bust_extractor_advanced.py` - Main program ⭐ (v4.2)
 - `requirements_advanced.txt` - Python dependencies
 - `Dockerfile` - Docker image definition
 - `docker-compose.yml` - Docker Compose configuration
@@ -364,14 +448,23 @@ Your original sprite sheet was processed with these results:
 
 ## 🌟 Tips
 
-1. **Use despill 1.0 for green screen** - Completely removes green halos
-2. **Use color-based for speed** - It's instant and works great for most sprite sheets
-3. **Use AI for photos** - When background is complex or has gradients
-4. **WebP for web** - 30% smaller files with minimal quality loss
-5. **Batch processing** - Process entire folders at once with consistent despill
-6. **Verbose mode** - Use `-v` to see detailed progress including despill operations
+1. **Use transparent-input for pre-processed images** - Fastest method when you've already prepared sprites
+2. **Use despill 1.0 for green screen** - Completely removes green halos
+3. **Use color-based for speed** - It's instant and works great for most sprite sheets
+4. **Use AI for photos** - When background is complex or has gradients
+5. **WebP for web** - 30% smaller files with minimal quality loss
+6. **Batch processing** - Process entire folders at once with consistent despill
+7. **Verbose mode** - Use `-v` to see detailed progress including despill operations
 
 ## 🎯 Recommended Workflows
+
+### For Pre-Processed Transparent Sprites (NEW!):
+```bash
+python bust_extractor_advanced.py transparent_sprites.png \
+    --transparent-input \
+    --format webp \
+    --quality 95
+```
 
 ### For Green Screen Sprite Sheets:
 ```bash
@@ -399,6 +492,13 @@ python bust_extractor_advanced.py pixel_art.png \
     -t 10
 ```
 
+### For Already Transparent Pixel Art:
+```bash
+python bust_extractor_advanced.py pixel_sprites.png \
+    --transparent-input \
+    --format png
+```
+
 ## 📄 License
 
 MIT License - Free to use for commercial and personal projects.
@@ -410,3 +510,9 @@ raven2cz
 ## 🎉 Done!
 
 Your sprite sheet busts are ready to use in RPG Maker MZ, Unity, Godot, or any game engine - with professional-quality edges and zero color bleeding! 🚀
+
+## 📝 Version History
+
+- **v4.2** - Added transparent input mode for pre-processed images
+- **v4.1** - Added despill technology with configurable strength
+- **v4.0** - Initial release with automatic detection and dual background removal

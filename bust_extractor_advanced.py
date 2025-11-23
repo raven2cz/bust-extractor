@@ -9,6 +9,7 @@ automatic detection, background removal, and batch processing capabilities.
 Features:
     - Automatic bust detection (no fixed columns)
     - Color-based or AI-powered background removal
+    - Transparent input support (skip background removal)
     - Green screen despill for clean edges
     - Edge feathering for smooth alpha transitions
     - PNG or WebP output with optimization
@@ -25,6 +26,9 @@ Usage:
 
     # Single file with WebP output
     python bust_extractor_advanced.py sprite_sheet.png --format webp
+
+    # For images with transparent background already (skip BG removal)
+    python bust_extractor_advanced.py transparent_sprites.png --transparent-input
 
     # Green screen with despill (recommended for green backgrounds)
     python bust_extractor_advanced.py greenscreen.png --despill
@@ -64,6 +68,7 @@ Arguments:
     -p, --padding       Padding around busts in pixels (default: 30)
     -b, --bg-method     Background removal: 'color' or 'ai' (default: color)
     -t, --bg-tolerance  Color tolerance for color-based removal (default: 30)
+    --transparent-input Skip background removal (image already has transparent BG)
     -d, --despill       Remove color spill from edges (default: enabled)
     --no-despill        Disable despill
     -s, --despill-strength  Despill strength 0.0-1.0 (default: 0.8, 1.0=aggressive)
@@ -100,7 +105,7 @@ Requirements:
     - onnxruntime>=1.16.0
 
 Author: raven2cz
-Version: 4.1
+Version: 4.3
 License: MIT
 """
 
@@ -129,6 +134,7 @@ class BustConfig:
     padding: int = 30
     bg_method: str = "color"  # 'color' or 'ai'
     bg_tolerance: int = 30
+    transparent_input: bool = False  # Skip background removal if already transparent
     despill: bool = True  # Remove color spill from edges
     despill_strength: float = 0.8  # Despill strength 0.0-1.0
     edge_feather: int = 2  # Edge feathering amount (0-10, -1=off)
@@ -187,6 +193,41 @@ class BustExtractor:
         if self.config.verbose or force:
             print(message)
     
+    def has_transparency(self, image: Image.Image) -> bool:
+        """
+        Check if image already has a transparent background.
+        
+        This detects if the image has significant transparent areas, which would
+        indicate it's already been processed and doesn't need background removal.
+        
+        Args:
+            image: PIL Image
+            
+        Returns:
+            True if image has significant transparent areas (>10% of pixels)
+        """
+        # Check if image has alpha channel
+        if image.mode not in ('RGBA', 'LA'):
+            return False
+        
+        # Convert to RGBA if needed
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+        
+        # Get alpha channel
+        alpha = np.array(image)[:, :, 3]
+        
+        # Count transparent pixels (alpha < 10)
+        transparent_pixels = np.sum(alpha < 10)
+        total_pixels = alpha.size
+        
+        # If more than 10% pixels are transparent, assume transparent background
+        transparency_ratio = transparent_pixels / total_pixels
+        
+        self.log(f"  Transparency check: {transparency_ratio*100:.1f}% transparent pixels")
+        
+        return transparency_ratio > 0.1
+    
     def load_image(self) -> bool:
         """
         Load the input image.
@@ -195,9 +236,11 @@ class BustExtractor:
             True if successful, False otherwise
         """
         try:
-            self.image = Image.open(self.config.input_path).convert('RGB')
+            # Load image without converting to RGB (preserve alpha if present)
+            self.image = Image.open(self.config.input_path)
             self.log(f"✓ Loaded: {self.config.input_path}", force=True)
             self.log(f"  Size: {self.image.size[0]}x{self.image.size[1]}px")
+            self.log(f"  Mode: {self.image.mode}")
             return True
         except Exception as e:
             print(f"✗ Error loading image: {e}")
@@ -213,6 +256,10 @@ class BustExtractor:
         Returns:
             RGB tuple of the most common corner color
         """
+        # Convert to RGB if needed (removes alpha channel)
+        if image.mode == 'RGBA':
+            image = image.convert('RGB')
+        
         corners = [
             image.getpixel((0, 0)),
             image.getpixel((image.width - 1, 0)),
@@ -487,8 +534,16 @@ class BustExtractor:
         data = np.array(image)
         alpha = data[:, :, 3]
         
-        # Create binary mask (threshold at 10 to ignore nearly-transparent pixels)
-        binary_mask = alpha > 10
+        # Create binary mask with appropriate threshold
+        # For transparent input: use high threshold (200) to ignore edge feathering
+        # For normal processing: use low threshold (10) to catch all content
+        if self.config.transparent_input:
+            threshold = 200
+            self.log(f"  Using high alpha threshold ({threshold}) for transparent input")
+        else:
+            threshold = 10
+        
+        binary_mask = alpha > threshold
         
         # Label all connected components
         labeled_array, num_features = ndimage.label(binary_mask)
@@ -693,10 +748,27 @@ class BustExtractor:
             if not self.load_image():
                 return False
             
-            # Remove background from entire image
-            self.log("\nRemoving background...")
-            no_bg_image = self.remove_background(self.image)
-            self.log("✓ Background removed")
+            # Auto-detect transparent background (NEW in v4.3!)
+            if not self.config.transparent_input and self.has_transparency(self.image):
+                self.log("\n🔍 Auto-detected transparent background!", force=True)
+                self.log("  → Switching to transparent-input mode", force=True)
+                self.log("  → This preserves your exact alpha channel", force=True)
+                self.config.transparent_input = True
+            
+            # Remove background from entire image (or skip if already transparent)
+            if self.config.transparent_input:
+                self.log("\nSkipping background removal (transparent input mode)")
+                # Ensure image has alpha channel
+                if self.image.mode != 'RGBA':
+                    self.log("  Converting to RGBA...")
+                    no_bg_image = self.image.convert('RGBA')
+                else:
+                    no_bg_image = self.image
+                self.log("✓ Using existing transparency")
+            else:
+                self.log("\nRemoving background...")
+                no_bg_image = self.remove_background(self.image)
+                self.log("✓ Background removed")
             
             # Automatically detect bust regions
             bust_bboxes = self.detect_bust_regions(no_bg_image)
@@ -779,6 +851,7 @@ def process_single_file(input_file: str, args: argparse.Namespace) -> bool:
         padding=args.padding,
         bg_method=args.bg_method,
         bg_tolerance=args.bg_tolerance,
+        transparent_input=args.transparent_input,
         despill=args.despill,
         despill_strength=args.despill_strength,
         edge_feather=args.edge_feather,
@@ -904,6 +977,11 @@ Examples:
         default=30,
         help='Color tolerance for color-based removal (default: 30)'
     )
+    parser.add_argument(
+        '--transparent-input',
+        action='store_true',
+        help='Skip background removal - image already has transparent background'
+    )
     
     # Edge processing options
     parser.add_argument(
@@ -965,7 +1043,7 @@ Examples:
     
     # Print header
     print("=" * 60)
-    print("Character Bust Extractor v4.1")
+    print("Character Bust Extractor v4.3")
     print("=" * 60)
     
     # Check if input is a glob pattern or single file
