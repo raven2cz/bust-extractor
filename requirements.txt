@@ -8,5 +8,5 @@ scipy>=1.11.0            # Connected components analysis
 
 # Optional dependencies (only for AI background removal)
 # Uncomment these if you want to use --bg-method ai
-rembg>=2.0.50          # AI background removal
-onnxruntime>=1.16.0    # Required by rembg
+#rembg>=2.0.50          # AI background removal
+#onnxruntime>=1.16.0    # Required by rembg

@@ -9,6 +9,8 @@ automatic detection, background removal, and batch processing capabilities.
 Features:
     - Automatic bust detection (no fixed columns)
     - Color-based or AI-powered background removal
+    - Green screen despill for clean edges
+    - Edge feathering for smooth alpha transitions
     - PNG or WebP output with optimization
     - Batch processing support
     - Connected components analysis for fragment removal
@@ -23,6 +25,15 @@ Usage:
 
     # Single file with WebP output
     python bust_extractor_advanced.py sprite_sheet.png --format webp
+
+    # Green screen with despill (recommended for green backgrounds)
+    python bust_extractor_advanced.py greenscreen.png --despill
+
+    # Custom edge feathering for smoother transitions
+    python bust_extractor_advanced.py sprite.png --edge-feather 3
+
+    # Disable edge feathering
+    python bust_extractor_advanced.py sprite.png --edge-feather -1
 
     # Single file with AI background removal
     python bust_extractor_advanced.py sprite_sheet.png --bg-method ai
@@ -39,8 +50,10 @@ Usage:
         --format webp \\
         --quality 90 \\
         --padding 40 \\
-        --bg-method ai \\
+        --bg-method color \\
         --bg-tolerance 35 \\
+        --despill \\
+        --edge-feather 2 \\
         --names "idle,happy,angry,thinking"
 
 Arguments:
@@ -51,23 +64,31 @@ Arguments:
     -p, --padding       Padding around busts in pixels (default: 30)
     -b, --bg-method     Background removal: 'color' or 'ai' (default: color)
     -t, --bg-tolerance  Color tolerance for color-based removal (default: 30)
+    -d, --despill       Remove color spill from edges (default: enabled)
+    --no-despill        Disable despill
+    -s, --despill-strength  Despill strength 0.0-1.0 (default: 0.8, 1.0=aggressive)
+    -e, --edge-feather  Edge feathering amount 0-10, -1=off (default: 2)
     -n, --names         Comma-separated bust names (default: idle,happy,angry,thinking,...)
     --no-preview        Skip preview generation
     -v, --verbose       Enable verbose output
 
 Examples:
-    # Process single file with defaults
-    $ python bust_extractor_advanced.py my_sprites.png
+    # Process green screen sprite sheet (aggressive despill)
+    $ python bust_extractor_advanced.py greenscreen.png --despill-strength 1.0
     
-    # Batch process all PNGs, output as WebP
-    $ python bust_extractor_advanced.py "*.png" --format webp --quality 90
+    # Batch process all PNGs with max despill and feathering
+    $ python bust_extractor_advanced.py "*.png" --format webp --despill-strength 1.0
     
     # Use AI background removal for complex backgrounds
     $ python bust_extractor_advanced.py photo_sprites.jpg --bg-method ai
     
-    # Custom names for 6 busts
+    # Custom names for 6 busts with medium despill
     $ python bust_extractor_advanced.py chars.png \\
-        --names "normal,smile,frown,surprised,thinking,angry"
+        --names "normal,smile,frown,surprised,thinking,angry" \\
+        --despill-strength 0.6
+    
+    # Disable all edge processing for pixel-perfect results
+    $ python bust_extractor_advanced.py pixel_art.png --no-despill --edge-feather -1
 
 Requirements:
     - Pillow>=10.0.0
@@ -79,7 +100,7 @@ Requirements:
     - onnxruntime>=1.16.0
 
 Author: raven2cz
-Version: 4.0
+Version: 4.1
 License: MIT
 """
 
@@ -108,6 +129,9 @@ class BustConfig:
     padding: int = 30
     bg_method: str = "color"  # 'color' or 'ai'
     bg_tolerance: int = 30
+    despill: bool = True  # Remove color spill from edges
+    despill_strength: float = 0.8  # Despill strength 0.0-1.0
+    edge_feather: int = 2  # Edge feathering amount (0-10, -1=off)
     names: Optional[List[str]] = None
     generate_preview: bool = True
     verbose: bool = False
@@ -119,7 +143,8 @@ class BustExtractor:
     
     This extractor uses connected components analysis to automatically detect
     bust regions without requiring fixed column divisions. It supports both
-    color-based and AI-powered background removal.
+    color-based and AI-powered background removal, with advanced edge processing
+    for clean, professional results.
     """
     
     # Default bust names for auto-naming
@@ -136,6 +161,7 @@ class BustExtractor:
         self.config = config
         self.image = None
         self.busts = []
+        self.detected_bg_color = None
         
         # Lazy import of rembg only if AI method is selected
         self.rembg_remove = None
@@ -196,9 +222,158 @@ class BustExtractor:
         
         # Find most common corner color
         bg_color = Counter(corners).most_common(1)[0][0]
+        self.detected_bg_color = bg_color
         self.log(f"  Background color: RGB{bg_color}")
         
         return bg_color
+    
+    def despill_color(self, image: Image.Image, bg_color: Tuple[int, int, int]) -> Image.Image:
+        """
+        Remove color spill using configurable strength.
+        
+        With high strength, this completely eliminates the background color
+        from ALL visible pixels, not just edges.
+        
+        Args:
+            image: PIL Image with RGBA channels
+            bg_color: Background color to despill
+            
+        Returns:
+            PIL Image with despilled colors
+        """
+        if not self.config.despill or self.config.despill_strength <= 0:
+            return image
+        
+        self.log(f"  Applying color despill (strength: {self.config.despill_strength:.1f})...")
+        
+        data = np.array(image).astype(np.float32)
+        
+        # Extract channels
+        r, g, b, a = data[:,:,0], data[:,:,1], data[:,:,2], data[:,:,3]
+        
+        # Work on all visible pixels
+        visible_mask = a > 0
+        
+        # Identify which color channel dominates in background
+        bg_r, bg_g, bg_b = bg_color
+        strength = self.config.despill_strength
+        
+        # For green screen (most common case)
+        if bg_g > bg_r and bg_g > bg_b:
+            # Green screen despill
+            # Strategy: where green > max(r,b), reduce it
+            max_other = np.maximum(r, b)
+            g_excess = np.maximum(0, g - max_other)
+            
+            # Apply reduction based on strength
+            # strength=0.5: gentle (70% reduction)
+            # strength=1.0: aggressive (95% reduction) 
+            reduction_factor = 0.5 + (strength * 0.45)
+            
+            # For maximum strength, also consider average of other channels
+            if strength >= 0.9:
+                # Ultra-aggressive: set green to average of other channels where excess exists
+                avg_other = (r + b) / 2
+                g[visible_mask] = np.where(
+                    g_excess[visible_mask] > 3,
+                    avg_other[visible_mask],
+                    g[visible_mask]
+                )
+            else:
+                # Standard reduction
+                g[visible_mask] = g[visible_mask] - (g_excess[visible_mask] * reduction_factor)
+            
+        elif bg_r > bg_g and bg_r > bg_b:
+            # Red screen despill
+            max_other = np.maximum(g, b)
+            r_excess = np.maximum(0, r - max_other)
+            
+            reduction_factor = 0.5 + (strength * 0.45)
+            
+            if strength >= 0.9:
+                avg_other = (g + b) / 2
+                r[visible_mask] = np.where(
+                    r_excess[visible_mask] > 3,
+                    avg_other[visible_mask],
+                    r[visible_mask]
+                )
+            else:
+                r[visible_mask] = r[visible_mask] - (r_excess[visible_mask] * reduction_factor)
+            
+        elif bg_b > bg_r and bg_b > bg_g:
+            # Blue screen despill
+            max_other = np.maximum(r, g)
+            b_excess = np.maximum(0, b - max_other)
+            
+            reduction_factor = 0.5 + (strength * 0.45)
+            
+            if strength >= 0.9:
+                avg_other = (r + g) / 2
+                b[visible_mask] = np.where(
+                    b_excess[visible_mask] > 3,
+                    avg_other[visible_mask],
+                    b[visible_mask]
+                )
+            else:
+                b[visible_mask] = b[visible_mask] - (b_excess[visible_mask] * reduction_factor)
+        
+        # Clip values to valid range
+        data[:,:,0] = np.clip(r, 0, 255)
+        data[:,:,1] = np.clip(g, 0, 255)
+        data[:,:,2] = np.clip(b, 0, 255)
+        
+        return Image.fromarray(data.astype(np.uint8), 'RGBA')
+    
+    def feather_edges(self, image: Image.Image, amount: int) -> Image.Image:
+        """
+        Apply edge feathering for smooth alpha transitions.
+        
+        This creates a subtle gradient at the edges for better blending
+        when composited on different backgrounds.
+        
+        Args:
+            image: PIL Image with alpha channel
+            amount: Feathering amount in pixels (0-10)
+            
+        Returns:
+            PIL Image with feathered edges
+        """
+        if amount <= 0:
+            return image
+        
+        self.log(f"  Applying edge feathering (amount: {amount})...")
+        
+        data = np.array(image)
+        alpha = data[:, :, 3].astype(np.float32)
+        
+        # Create a slightly eroded version
+        kernel_size = amount * 2 + 1
+        eroded = ndimage.grey_erosion(alpha, size=(kernel_size, kernel_size))
+        
+        # Blend between original and eroded based on distance from edge
+        # This creates a smooth falloff
+        alpha_smooth = alpha.copy()
+        
+        # Find edge pixels (transition from opaque to transparent)
+        edge_mask = (alpha > 10) & (alpha < 245)
+        
+        if np.any(edge_mask):
+            # Apply gaussian blur to edges for smooth transition
+            edge_alpha = alpha.copy()
+            edge_alpha[~edge_mask] = 0
+            blurred = ndimage.gaussian_filter(edge_alpha, sigma=amount * 0.5)
+            
+            # Blend
+            blend_factor = 0.6
+            alpha_smooth[edge_mask] = (
+                alpha[edge_mask] * (1 - blend_factor) + 
+                blurred[edge_mask] * blend_factor
+            )
+        
+        # Apply result
+        data[:, :, 3] = np.clip(alpha_smooth, 0, 255).astype(np.uint8)
+        
+        return Image.fromarray(data, 'RGBA')
     
     def remove_background_color(self, image: Image.Image) -> Image.Image:
         """
@@ -235,7 +410,16 @@ class BustExtractor:
         alpha_smoothed = Image.fromarray(alpha).filter(ImageFilter.GaussianBlur(1))
         data[:, :, 3] = np.array(alpha_smoothed)
         
-        return Image.fromarray(data, 'RGBA')
+        result = Image.fromarray(data, 'RGBA')
+        
+        # Apply despill to remove color fringing
+        result = self.despill_color(result, bg_color)
+        
+        # Apply edge feathering
+        if self.config.edge_feather > 0:
+            result = self.feather_edges(result, self.config.edge_feather)
+        
+        return result
     
     def remove_background_ai(self, image: Image.Image) -> Image.Image:
         """
@@ -257,7 +441,17 @@ class BustExtractor:
             image = image.convert('RGB')
         
         # Use rembg for background removal
-        return self.rembg_remove(image)
+        result = self.rembg_remove(image)
+        
+        # AI doesn't need despill as much, but can still help
+        if self.config.despill and self.detected_bg_color:
+            result = self.despill_color(result, self.detected_bg_color)
+        
+        # Apply edge feathering
+        if self.config.edge_feather > 0:
+            result = self.feather_edges(result, self.config.edge_feather)
+        
+        return result
     
     def remove_background(self, image: Image.Image) -> Image.Image:
         """
@@ -585,6 +779,9 @@ def process_single_file(input_file: str, args: argparse.Namespace) -> bool:
         padding=args.padding,
         bg_method=args.bg_method,
         bg_tolerance=args.bg_tolerance,
+        despill=args.despill,
+        despill_strength=args.despill_strength,
+        edge_feather=args.edge_feather,
         names=names,
         generate_preview=not args.no_preview,
         verbose=args.verbose
@@ -655,12 +852,12 @@ Examples:
   Single file:
     %(prog)s sprite_sheet.png
     %(prog)s sprite.png -o my_busts --format webp
-    %(prog)s photo.jpg --bg-method ai --quality 90
+    %(prog)s greenscreen.png --despill --edge-feather 3
     
   Batch processing:
-    %(prog)s "*.png" --format webp
-    %(prog)s "characters_*.png" --bg-method ai
-    %(prog)s "*.jpg" --padding 40 --names "a,b,c,d"
+    %(prog)s "*.png" --format webp --despill
+    %(prog)s "characters_*.png" --edge-feather 2
+    %(prog)s "*.jpg" --bg-method ai --no-despill
         """
     )
     
@@ -708,6 +905,32 @@ Examples:
         help='Color tolerance for color-based removal (default: 30)'
     )
     
+    # Edge processing options
+    parser.add_argument(
+        '-d', '--despill',
+        action='store_true',
+        default=True,
+        help='Remove color spill from edges (default: enabled)'
+    )
+    parser.add_argument(
+        '--no-despill',
+        action='store_false',
+        dest='despill',
+        help='Disable color despill'
+    )
+    parser.add_argument(
+        '-s', '--despill-strength',
+        type=float,
+        default=0.8,
+        help='Despill strength 0.0-1.0 (default: 0.8, 1.0=max aggressive)'
+    )
+    parser.add_argument(
+        '-e', '--edge-feather',
+        type=int,
+        default=2,
+        help='Edge feathering amount 0-10, -1=off (default: 2)'
+    )
+    
     # Bust naming
     parser.add_argument(
         '-n', '--names',
@@ -732,9 +955,17 @@ Examples:
     if not 1 <= args.quality <= 100:
         parser.error("Quality must be between 1 and 100")
     
+    # Validate edge feather
+    if args.edge_feather < -1 or args.edge_feather > 10:
+        parser.error("Edge feather must be between -1 and 10")
+    
+    # Validate despill strength
+    if not 0.0 <= args.despill_strength <= 1.0:
+        parser.error("Despill strength must be between 0.0 and 1.0")
+    
     # Print header
     print("=" * 60)
-    print("Character Bust Extractor v4.0")
+    print("Character Bust Extractor v4.1")
     print("=" * 60)
     
     # Check if input is a glob pattern or single file
