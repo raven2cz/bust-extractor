@@ -1,12 +1,50 @@
-# Character Bust Extractor - Advanced Version Requirements
-# Python 3.8+
+# Bust Extractor Pro v2.0 - Requirements
+# Python 3.10+
+#
+# Install: pip install -r requirements.txt
+# For GPU acceleration, ensure CUDA is installed first.
 
-# Core dependencies (always required)
-Pillow>=10.0.0           # Image processing
-numpy>=1.24.0            # Array operations
-scipy>=1.11.0            # Connected components analysis
+# =============================================================================
+# Web Framework
+# =============================================================================
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+aiofiles>=23.2.1
 
-# Optional dependencies (only for AI background removal)
-# Uncomment these if you want to use --bg-method ai
-#rembg>=2.0.50          # AI background removal
-#onnxruntime>=1.16.0    # Required by rembg
+# =============================================================================
+# Image Processing
+# =============================================================================
+Pillow>=10.2.0
+numpy>=1.26.0
+scipy>=1.12.0
+opencv-python>=4.9.0
+
+# =============================================================================
+# AI Background Removal
+# =============================================================================
+# Primary: rembg with BiRefNet model (best quality)
+rembg>=2.0.50
+
+# GPU Acceleration (NVIDIA CUDA)
+# Choose ONE based on your CUDA version:
+onnxruntime-gpu>=1.17.0    # For CUDA 11.x / 12.x
+
+# CPU Fallback (uncomment if no GPU):
+# onnxruntime>=1.17.0
+
+# =============================================================================
+# Optional: BiRefNet Direct (for advanced users)
+# =============================================================================
+# These are heavy dependencies. Only install if you need direct BiRefNet access.
+torch>=2.2.0
+torchvision>=0.17.0
+transformers>=4.38.0
+huggingface-hub>=0.21.0
+
+# =============================================================================
+# Development Tools (optional)
+# =============================================================================
+# scikit-image>=0.22.0     # Additional image processing
+# pytest>=8.0.0            # Testing
+# black>=24.0.0            # Code formatting

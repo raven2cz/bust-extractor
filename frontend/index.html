@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+ * Bust Extractor Pro v2.0
+ * =======================
+ * Professional web-based application for extracting character portraits
+ * from sprite sheets with AI-powered background removal.
+ * 
+ * Author: raven2cz
+ * License: MIT
+ * 
+ * File Structure:
+ * - index.html     : This file - UI structure
+ * - css/styles.css : All styling
+ * - js/locales.js  : Translations (i18n)
+ * - js/app.js      : Application logic
+-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Professional tool for extracting character portraits from sprite sheets with AI-powered background removal">
+    <meta name="author" content="raven2cz">
+    
+    <title>Bust Extractor Pro</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+    <!-- ============================================================
+         HEADER
+         ============================================================ -->
+    <header class="header">
+        <div class="logo">
+            ✂️ <span data-i18n="title">Bust Extractor Pro</span> 
+            <span id="versionBadge">v2.0</span>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:0.5rem;">
+            <button class="btn btn-small btn-secondary" id="langEn" style="width:40px">EN</button>
+            <button class="btn btn-small btn-secondary" id="langCz" style="width:40px">CZ</button>
+        </div>
+    </header>
+
+    <!-- ============================================================
+         MAIN LAYOUT
+         ============================================================ -->
+    <main class="main">
+        <!-- ========================================================
+             LEFT PANEL - Settings
+             ======================================================== -->
+        <div class="panel">
+            <div class="panel-header" data-i18n="header_settings">Settings</div>
+            <div class="panel-content">
+                
+                <!-- Image Upload Section -->
+                <div class="section">
+                    <div class="section-title" data-i18n="sec_image">📁 Image</div>
+                    <div class="upload-zone" id="uploadZone" onclick="triggerUpload()"
+                        ondragover="handleDragOver(event)" ondrop="handleDrop(event)">
+                        <div class="upload-zone-icon">🖼️</div>
+                        <div class="upload-zone-text" data-i18n="upload_text">Click or Drop Image</div>
+                    </div>
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                </div>
+
+                <!-- Secondary Upload for Difference Matting -->
+                <div class="section" id="secondaryUploadSection" style="display:none; border:2px solid var(--hybrid);">
+                    <div class="section-title" data-i18n="sec_image_sec">🌑 Secondary Image (Black BG)</div>
+                    <div class="upload-zone" id="uploadZoneSec" style="padding: 1rem;">
+                        <div class="upload-zone-text" data-i18n="upload_text_sec">Upload black background version</div>
+                    </div>
+                    <input type="file" id="fileInputSec" accept="image/*" hidden>
+                    <div id="secFileStatus" style="font-size:0.75rem; color:var(--success); margin-top:0.5rem; display:none;" data-i18n="status_uploaded">✓ Uploaded</div>
+                </div>
+
+                <!-- Background Removal Section -->
+                <div class="section" id="bgSection" style="display:none">
+                    <div class="section-title" data-i18n="sec_bg">🎨 Background Removal</div>
+
+                    <!-- 1. Model Selection -->
+                    <div class="ui-box">
+                        <div class="ui-box-title" data-i18n="box_model">1. Model & Method</div>
+                        <div class="control">
+                            <div class="control-label" data-i18n="lbl_model">Select Model</div>
+                            <select id="bgMethod">
+                                <option value="rembg_birefnet-general" selected>BiRefNet (Best Edges)</option>
+                                <option value="difference_matting">Difference Matting (Profi - 2 Images)</option>
+                                <option value="rembg_isnet-anime">ISNet-Anime (Anime)</option>
+                                <option value="rembg_isnet-general-use">IS-Net (General)</option>
+                                <option value="rembg_u2net">U2-Net (Fast)</option>
+                                <option value="color_based">Color Based (Solid BG)</option>
+                            </select>
+                        </div>
+                        <div id="methodInfo" class="info-text" style="margin-top:0.5rem; color:var(--accent);"></div>
+                    </div>
+
+                    <!-- 2. Hybrid Validator -->
+                    <div class="ui-box" id="validatorBox" style="border-color:var(--hybrid);">
+                        <div class="ui-box-title">
+                            <span data-i18n="box_validator">2. Hybrid Validator</span> 
+                            <span class="badge" data-i18n="badge_recom">RECOMMENDED</span>
+                        </div>
+                        <label class="checkbox">
+                            <input type="checkbox" id="hybridCleansing">
+                            <span class="checkbox-box"></span>
+                            <div>
+                                <div data-i18n="chk_validator">Enable Validator</div>
+                                <div style="font-size:0.7rem; color:var(--text-dim);" data-i18n="desc_validator">Fixes missed background spots.</div>
+                            </div>
+                        </label>
+
+                        <div id="validatorSettings" style="margin-top:1rem; padding-left:1rem; border-left:2px solid var(--border); display:none;">
+                            <div class="control">
+                                <div class="control-label">
+                                    <span data-i18n="lbl_tol">Color Tolerance</span> 
+                                    <span class="control-value" id="valTolVal">30</span>
+                                </div>
+                                <input type="range" id="validatorTolerance" min="5" max="100" value="30">
+                            </div>
+                            <div class="control" style="margin-top:0.5rem">
+                                <div class="control-label">
+                                    <span data-i18n="lbl_safety">Safety (Min Area)</span> 
+                                    <span class="control-value" id="valEroVal">2</span>
+                                </div>
+                                <input type="range" id="validatorErosion" min="0" max="5" value="2">
+                            </div>
+                            <div class="info-text" data-i18n="desc_safety">Ignores small spots. Higher = Fewer holes.</div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Mask Refinement -->
+                    <div class="ui-box" id="refinementBox">
+                        <div class="ui-box-title" data-i18n="box_refine">3. Mask Refinement</div>
+
+                        <!-- Erode & Dilate -->
+                        <div class="collapsible-header" onclick="toggle('maskSettings')">
+                            <span data-i18n="head_erode">Erode & Dilate</span> <span>▼</span>
+                        </div>
+                        <div class="collapsible-content" id="maskSettings">
+                            <div class="row">
+                                <div class="control">
+                                    <div class="control-label">Erode <span class="control-value" id="erodeVal">0</span></div>
+                                    <input type="range" id="erode" min="0" max="10" value="0">
+                                </div>
+                                <div class="control">
+                                    <div class="control-label">Dilate <span class="control-value" id="dilateVal">0</span></div>
+                                    <input type="range" id="dilate" min="0" max="10" value="0">
+                                </div>
+                            </div>
+                            <label class="checkbox">
+                                <input type="checkbox" id="alphaMatting">
+                                <span class="checkbox-box"></span>
+                                <span data-i18n="chk_alpha">Alpha Matting (Softer Edges)</span>
+                            </label>
+                        </div>
+
+                        <!-- Feather -->
+                        <div class="collapsible-header" onclick="toggle('featherSettings')">
+                            <span data-i18n="head_feather">Feather</span> <span>▼</span>
+                        </div>
+                        <div class="collapsible-content" id="featherSettings">
+                            <label class="checkbox">
+                                <input type="checkbox" id="featherOn" checked>
+                                <span class="checkbox-box"></span>
+                                <span data-i18n="chk_feather">Enable Feathering</span>
+                            </label>
+                            <div class="control">
+                                <div class="control-label">
+                                    <span data-i18n="lbl_radius">Radius</span> 
+                                    <span class="control-value" id="featherRVal">2</span>
+                                </div>
+                                <input type="range" id="featherR" min="0" max="15" value="2">
+                            </div>
+                            <div class="control">
+                                <div class="control-label">
+                                    <span data-i18n="lbl_strength">Strength</span> 
+                                    <span class="control-value" id="featherSVal">0.50</span>
+                                </div>
+                                <input type="range" id="featherS" min="0" max="100" value="50">
+                            </div>
+                        </div>
+
+                        <!-- Despill -->
+                        <div class="collapsible-header" onclick="toggle('despillSettings')">
+                            <span data-i18n="head_despill">Despill</span> <span>▼</span>
+                        </div>
+                        <div class="collapsible-content" id="despillSettings">
+                            <label class="checkbox">
+                                <input type="checkbox" id="despillOn">
+                                <span class="checkbox-box"></span>
+                                <span data-i18n="chk_despill">Enable Despill</span>
+                            </label>
+                            <div class="control">
+                                <div class="control-label">
+                                    <span data-i18n="lbl_strength">Strength</span> 
+                                    <span class="control-value" id="despillSVal">0.50</span>
+                                </div>
+                                <input type="range" id="despillS" min="0" max="100" value="50">
+                            </div>
+                            <div class="control">
+                                <div class="control-label" data-i18n="lbl_color">Color</div>
+                                <select id="despillColor">
+                                    <option value="auto">Auto</option>
+                                    <option value="green">Green</option>
+                                    <option value="blue">Blue</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Color Decontamination -->
+                    <div class="ui-box" id="postProcessBox">
+                        <div class="ui-box-title" data-i18n="box_post">4. Color Decontamination</div>
+                        <label class="checkbox">
+                            <input type="checkbox" id="deconOn">
+                            <span class="checkbox-box"></span>
+                            <span data-i18n="chk_decon">Enable Decontamination</span>
+                        </label>
+                        <div id="deconSettings" style="display:none; margin-top:1rem;">
+                            <div class="control">
+                                <div class="control-label">
+                                    <span data-i18n="lbl_strength">Strength</span> 
+                                    <span class="control-value" id="deconSVal">0.50</span>
+                                </div>
+                                <input type="range" id="deconS" min="0" max="100" value="50">
+                            </div>
+                            <div class="control">
+                                <div class="control-label">
+                                    <span data-i18n="lbl_thresh">Threshold</span> 
+                                    <span class="control-value" id="deconThVal">250</span>
+                                </div>
+                                <input type="range" id="deconTh" min="0" max="255" value="250">
+                            </div>
+                            <div class="info-text" data-i18n="desc_thresh">Pixels above this are protected.</div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" id="removeBgBtn" style="margin-top:1rem; width:100%; padding:1rem;" data-i18n="btn_process">🚀 PROCESS IMAGE</button>
+                </div>
+
+                <!-- Detection Section -->
+                <div class="section" id="detectSection" style="display:none">
+                    <div class="section-title" data-i18n="sec_detect">🔍 Detection</div>
+                    <div class="control">
+                        <div class="control-label">
+                            <span data-i18n="lbl_min_size">Min. Size</span> 
+                            <span class="control-value" id="minAreaVal">5%</span>
+                        </div>
+                        <input type="range" id="minArea" min="1" max="30" value="5">
+                    </div>
+                    <button class="btn btn-primary" id="detectBtn" data-i18n="btn_detect">🔍 Detect Busts</button>
+                </div>
+
+                <!-- Export Section -->
+                <div class="section" id="exportSection" style="display:none">
+                    <div class="section-title" data-i18n="sec_export">📦 Export</div>
+                    <div class="control">
+                        <div class="control-label">
+                            <span data-i18n="lbl_padding">Padding</span> 
+                            <span class="control-value" id="paddingVal">30</span>
+                        </div>
+                        <input type="range" id="padding" min="0" max="100" value="30">
+                    </div>
+                    <div class="row">
+                        <div class="control">
+                            <div class="control-label" data-i18n="lbl_width">Width</div>
+                            <input type="number" id="uniformW" value="0" min="0" placeholder="auto">
+                        </div>
+                        <div class="control">
+                            <div class="control-label" data-i18n="lbl_height">Height</div>
+                            <input type="number" id="uniformH" value="0" min="0" placeholder="auto">
+                        </div>
+                    </div>
+                    <div class="control">
+                        <div class="control-label" data-i18n="lbl_format">Format</div>
+                        <select id="exportFormat">
+                            <option value="PNG">PNG (Lossless)</option>
+                            <option value="WEBP">WebP (Efficient)</option>
+                        </select>
+                    </div>
+                    <label class="checkbox">
+                        <input type="checkbox" id="expIndiv" checked>
+                        <span class="checkbox-box"></span>
+                        <span data-i18n="chk_individual">Individual Files</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" id="expSheet" checked>
+                        <span class="checkbox-box"></span>
+                        <span data-i18n="chk_sheet">Sprite Sheet</span>
+                    </label>
+                    <div class="control">
+                        <div class="control-label">
+                            <span data-i18n="lbl_sheet_pad">Sheet Padding</span> 
+                            <span class="control-value" id="sheetPadVal">0</span>
+                        </div>
+                        <input type="range" id="sheetPad" min="0" max="50" value="0">
+                    </div>
+                    <button class="btn btn-success" id="extractBtn" data-i18n="btn_extract">✂️ Extract</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================================
+             CENTER - Canvas Area
+             ======================================================== -->
+        <div class="canvas-area">
+            <!-- Toolbar -->
+            <div class="canvas-toolbar">
+                <div class="tabs">
+                    <button class="tab active" data-view="original" data-i18n="tab_original">Original</button>
+                    <button class="tab" data-view="processed" data-i18n="tab_processed">Processed</button>
+                    <button class="tab" data-view="mask" data-i18n="tab_mask">Mask</button>
+                    <button class="tab" data-view="detection" data-i18n="tab_detect">Detection</button>
+                    <button class="tab" data-view="alignment" data-i18n="tab_align">Alignment</button>
+                    <button class="tab" data-view="results" data-i18n="tab_results">Results</button>
+                </div>
+                <div class="toolbar-group">
+                    <button class="toolbar-btn active" id="bgTransparent" title="Background: Transparent">🏁</button>
+                    <button class="toolbar-btn" id="bgDark" title="Background: Dark">🌑</button>
+                    <button class="toolbar-btn" id="bgLight" title="Background: Light">🌕</button>
+                </div>
+                <div class="toolbar-group">
+                    <button class="toolbar-btn" id="toggleTools" title="Show/Hide Tools" style="color:var(--accent);">🛠️</button>
+                </div>
+                <div class="toolbar-group">
+                    <button class="toolbar-btn" id="zoomOut">−</button>
+                    <span class="zoom-display" id="zoomDisplay">100%</span>
+                    <button class="toolbar-btn" id="zoomIn">+</button>
+                    <button class="toolbar-btn" id="zoomFit">⊡</button>
+                    <button class="toolbar-btn" id="zoom100">1:1</button>
+                </div>
+            </div>
+
+            <!-- Viewport -->
+            <div class="canvas-viewport bg-transparent" id="viewport">
+                <!-- Floating Brush Toolbar -->
+                <div class="floating-toolbar" id="brushToolbar">
+                    <div class="toolbar-header" id="toolbarDragHandle" style="cursor: move; padding-bottom: 5px; border-bottom: 1px solid var(--border); margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-dim);" data-i18n="tool_tools">TOOLS</span>
+                        <span style="cursor: pointer;" onclick="document.getElementById('brushToolbar').style.display='none'">✕</span>
+                    </div>
+                    <div class="row-tools" style="display:flex; gap:0.5rem; justify-content:space-between; margin-bottom:0.5rem;">
+                        <div style="display:flex; gap:0.2rem;">
+                            <button class="tool-btn" id="toolEraser" data-i18n-title="tool_eraser_title" title="Eraser (E)">🔥</button>
+                            <button class="tool-btn" id="toolRestore" data-i18n-title="tool_restore_title" title="Restore Brush (R)">🖌️</button>
+                        </div>
+                        <div style="display:flex; gap:0.2rem;">
+                            <button class="tool-btn" id="btnUndo" data-i18n-title="tool_undo_title" title="Undo (Ctrl+Z)" disabled>↩️</button>
+                            <button class="tool-btn" id="btnRedo" data-i18n-title="tool_redo_title" title="Redo (Ctrl+Y)" disabled>↪️</button>
+                        </div>
+                    </div>
+                    <div class="tool-divider"></div>
+                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                        <div class="brush-preview" title="Brush Preview">
+                            <div class="brush-circle" id="brushCursor" style="width:20px;height:20px;"></div>
+                        </div>
+                        <span id="brushSizeVal" style="font-size:0.7rem; color:var(--accent); font-family:monospace;">20px</span>
+                    </div>
+                    <div class="control-label" style="font-size:0.7rem; margin-top:5px; color:var(--text-dim);" data-i18n="lbl_size">Size</div>
+                    <input type="range" id="brushSize" min="1" max="100" value="20" style="width:100%; height:4px;" data-i18n-title="tool_size_title" title="Brush Size">
+
+                    <div class="row" style="margin-top:5px; align-items:center;">
+                        <div class="control-label" style="font-size:0.7rem; flex:1; color:var(--text-dim);" data-i18n="lbl_hard">Hardness</div>
+                        <span id="brushHardnessVal" style="font-size:0.7rem; color:var(--accent); font-family:monospace;">50%</span>
+                    </div>
+                    <input type="range" id="brushHardness" min="0" max="100" value="50" style="width:100%; height:4px;" data-i18n-title="tool_hardness_title" title="Brush Softness">
+
+                    <button class="btn btn-small btn-primary" id="saveMaskBtn" style="margin-top:0.5rem;" data-i18n-title="tool_save_title" data-i18n="tool_apply" title="Save Changes (Ctrl+S)">💾 Apply</button>
+                </div>
+
+                <!-- Canvas Container -->
+                <div class="canvas-container" id="canvasContainer">
+                    <div id="initialUploadPrompt" style="padding: 3rem; text-align: center; color: var(--text-dim); cursor: pointer; border: 2px dashed var(--border); border-radius: 1rem;" onclick="triggerUpload()" ondragover="handleDragOver(event)" ondrop="handleDrop(event)">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">🖼️</div>
+                        <div data-i18n="upload_text">Click or Drop Image</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================================
+             RIGHT PANEL - Busts List / Results
+             ======================================================== -->
+        <div class="panel right-panel">
+            <div class="panel-header">
+                <span id="rightPanelTitle" data-i18n="panel_busts">Busts</span>
+                <span id="bustCount" style="background:var(--accent);padding:0.2rem 0.6rem;border-radius:10px;font-size:0.75rem;">0</span>
+            </div>
+            <div class="panel-content">
+                <!-- Busts List Panel -->
+                <div id="bustsPanel">
+                    <div id="bustList" style="color:var(--text-dim);text-align:center;padding:2rem;" data-i18n="msg_no_busts">
+                        Detected busts will appear here
+                    </div>
+
+                    <button class="btn btn-primary" id="proceedAlignBtn" style="display:none; width:100%; margin:1rem 0;" data-i18n="btn_proceed_align">➡️ Proceed to Alignment</button>
+
+                    <div class="offset-editor" id="offsetEditor" style="display:none">
+                        <div class="section-title" data-i18n="head_align">📐 Align Selected Bust</div>
+                        <div class="row">
+                            <div class="control">
+                                <div class="control-label">Offset X <span class="control-value" id="offXVal">0</span></div>
+                                <input type="range" id="offX" min="-100" max="100" value="0">
+                            </div>
+                            <div class="control">
+                                <div class="control-label">Offset Y <span class="control-value" id="offYVal">0</span></div>
+                                <input type="range" id="offY" min="-100" max="100" value="0">
+                            </div>
+                        </div>
+                        <button class="btn btn-small btn-danger" id="resetOffsetsBtn" style="width:100%; margin-top:0.5rem; background:var(--danger);" data-i18n="btn_reset">↺ Reset</button>
+                    </div>
+                </div>
+
+                <!-- Results Summary Panel -->
+                <div id="resultsPanel" style="display:none;">
+                    <div class="section" style="background:var(--bg-card); border-radius:8px; padding:1rem; margin-bottom:1rem;">
+                        <div class="section-title" style="color:var(--success);" data-i18n="head_results_info">📊 Export Summary</div>
+                        <div id="resultsSummary" style="font-size:0.85rem; color:var(--text-dim);"></div>
+                    </div>
+
+                    <div class="sprite-preview" id="spritePreviewResults">
+                        <div class="sprite-preview-label" data-i18n="head_sprite">✨ Sprite Sheet</div>
+                        <img id="spriteImgResults" src="" style="width:100%; border-radius:8px; cursor:pointer;" onclick="window.open(this.src, '_blank')">
+                        <div style="font-size:0.7rem; color:var(--text-dim); margin-top:0.5rem; text-align:center;" data-i18n="hint_click_zoom">Click to view full size</div>
+                    </div>
+
+                    <button class="btn btn-success" id="downloadBtnPanel" style="width:100%; margin-top:1rem;" data-i18n="btn_download">📥 Download ZIP</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ============================================================
+         OVERLAYS
+         ============================================================ -->
+    
+    <!-- Loading Overlay -->
+    <div class="loading" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Processing...</div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ============================================================
+         SCRIPTS
+         ============================================================ -->
+    <script src="js/locales.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
